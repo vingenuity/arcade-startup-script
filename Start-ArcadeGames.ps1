@@ -1,3 +1,67 @@
+
+<#PSScriptInfo
+
+.VERSION 1.0.1
+
+.GUID 8845ad34-cf4a-468a-a188-65f4dc91e7d9
+
+.AUTHOR Vincent Kocks
+
+.COMPANYNAME Vingenuity
+
+.COPYRIGHT 2020 Vincent Kocks
+
+.TAGS
+
+.LICENSEURI
+
+.PROJECTURI
+
+.ICONURI
+
+.EXTERNALMODULEDEPENDENCIES
+
+.REQUIREDSCRIPTS
+
+.EXTERNALSCRIPTDEPENDENCIES
+
+.RELEASENOTES
+
+
+.PRIVATEDATA
+
+#>
+
+<#
+.SYNOPSIS
+ Starts one of multiple arcade games selected by the user.
+
+.DESCRIPTION
+ Starts one of multiple arcade games selected by the user.
+
+.PARAMETER NoWaitForConnection
+ If set, the script will not wait for an internet connection before starting a game.
+
+.PARAMETER DelayBetweenConnectionChecksSeconds
+ Specifies the delay in seconds between each internet connection check.
+ The delay can be between 1 and 60 seconds.
+ The default is 5 seconds.
+
+.PARAMETER NoSelectGame
+ If set, game selection will be skipped, and the default game will be started immediately.
+
+.INPUTS
+ None. You cannot pipe objects to Start-ArcadeGames.ps1.
+
+.OUTPUTS
+ None. Start-ArcadeGames.ps1 does not generate any output.
+
+.EXAMPLE
+ C:\PS> .\Start-ArcadeGames.ps1 -InformationAction Continue
+
+.LINK
+ https://github.com/vingenuity/arcade-startup-script
+#>
 [CmdletBinding()]
 Param(
     [switch]$NoWaitForConnection,
@@ -8,21 +72,42 @@ Param(
     [switch]$NoSelectGame
 )
 
-function Get-ConnectedAdapterNames {
+<#
+.SYNOPSIS
+ Returns the names of all internet adapters that are currently connected.
+
+.DESCRIPTION
+ Returns the names of all internet adapters that are currently connected.
+
+.INPUTS
+ None. You cannot pipe objects to Get-ConnectedNetAdapterNames.
+
+.OUTPUTS
+ System.String. Get-ConnectedNetAdapterNames returns zero or more net adapter names.
+
+.EXAMPLE
+ C:\PS> Get-ConnectedNetAdapterNames
+ Ethernet
+ Wi-Fi
+#>
+function Get-ConnectedNetAdapterNames {
     Param()
     return Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -ExpandProperty 'Name'
 }
 
+
+
+# Main execution
 if($NoWaitForConnection -eq $True) {
     Write-Information "Skipping internet connection check due to -NoWaitForConnection being set."
 }
 else {
     Write-Information 'Waiting for internet connection before starting games...'
-    $connectedAdapterNames = Get-ConnectedAdapterNames
+    $connectedAdapterNames = Get-ConnectedNetAdapterNames
     while($null -eq $connectedAdapterNames) {
         Write-Verbose "Internet not connected. Waiting $DelayBetweenConnectionChecksSeconds seconds before next check..."
         Start-Sleep -Seconds:$DelayBetweenConnectionChecksSeconds
-        $connectedAdapterNames = Get-ConnectedAdapterNames
+        $connectedAdapterNames = Get-ConnectedNetAdapterNames
     }
     $firstConnection = $connectedAdapterNames | Select-Object -First 1
     Write-Information "Internet connected on connection '$firstConnection'."
