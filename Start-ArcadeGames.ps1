@@ -1,7 +1,7 @@
 
 <#PSScriptInfo
 
-.VERSION 1.0.1
+.VERSION 1.1.0
 
 .GUID 8845ad34-cf4a-468a-a188-65f4dc91e7d9
 
@@ -39,6 +39,14 @@
 .DESCRIPTION
  Starts one of multiple arcade games selected by the user.
 
+.PARAMETER ConfigurationFile
+ Specifies the path to a configuration file from which all script parameters will be loaded.
+ This configuration file MUST be in PowerShell Data (.psd1) format.
+
+.PARAMETER GameBindings
+ Specifies the bindings from each input to the arcade game being started.
+ AT LEAST one binding MUST be specified!
+
 .PARAMETER NoWaitForConnection
  If set, the script will not wait for an internet connection before starting a game.
 
@@ -57,18 +65,30 @@
  None. Start-ArcadeGames.ps1 does not generate any output.
 
 .EXAMPLE
- C:\PS> .\Start-ArcadeGames.ps1 -InformationAction Continue
+ C:\PS> .\Start-ArcadeGames.ps1 -ConfigurationFile '.\Start-ArcadeGames.psd1' -InformationAction Continue
 
 .LINK
  https://github.com/vingenuity/arcade-startup-script
 #>
 [CmdletBinding()]
 Param(
+    [Parameter(Mandatory, ParameterSetName='Cfg')]
+    [ValidateScript({$_ | Test-Path -PathType 'Leaf'})]
+    [ValidateScript({[System.IO.Path]::GetExtension($_) -eq '.psd1'})]
+    [string]$ConfigurationFile,
+
+    [Parameter(Mandatory, ParameterSetName='Cmd')]
+    [AllowEmptyCollection()]  # Empty bindings check done later for better error output.
+    [PSObject[]]$GameBindings,
+
+    [Parameter(ParameterSetName='Cmd')]
     [switch]$NoWaitForConnection,
 
+    [Parameter(ParameterSetName='Cmd')]
     [ValidateRange(1, 60)]
     [int]$DelayBetweenConnectionChecksSeconds = 5,
 
+    [Parameter(ParameterSetName='Cmd')]
     [switch]$NoSelectGame
 )
 
@@ -91,13 +111,63 @@ Param(
  Wi-Fi
 #>
 function Get-ConnectedNetAdapterNames {
+    [OutputType([System.String])]
     Param()
     return Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -ExpandProperty 'Name'
+}
+
+<#
+.SYNOPSIS
+ Loads the contents of a PowerShell configuration file.
+
+.DESCRIPTION
+ Loads the contents of a PowerShell configuration file.
+
+.PARAMETER FilePath
+ Specifies the path to the PowerShell configuration file to load.
+
+.INPUTS
+ None. You cannot pipe objects to Import-PowerShellConfigurationFile.
+
+.OUTPUTS
+ Hashtable. Import-PowerShellConfigurationFile returns the configuration contents as a table.
+
+.EXAMPLE
+ C:\PS> Import-PowerShellConfigurationFile '.\config.psd1'
+ System.Collections.Hashtable
+#>
+function Import-PowerShellConfigurationFile {
+    [OutputType([Hashtable])]
+    Param(
+        [Parameter(Mandatory, Position=0)]
+        [ValidateScript({$_ | Test-Path -PathType 'Leaf'})]
+        [string]$FilePath
+    )
+
+    if($PSVersionTable.PSVersion.Major -lt 5) {
+        return Import-LocalizedData -FileName:$FilePath
+    }
+    else {
+        return Import-PowershellDataFile -Path:$FilePath
+    }
 }
 
 
 
 # Main execution
+Write-Information "Importing game configuration file at '$ConfigurationFile'..."
+$configurationData = Import-PowerShellConfigurationFile $ConfigurationFile
+ForEach($configurationEntry in $configurationData.GetEnumerator()) {
+    $configName = $configurationEntry.Name
+    $configValue = $configurationEntry.Value
+
+    Write-Verbose "Setting configuration parameter '$configName' to '$($configValue | Out-String)'..."
+    Set-Variable -Name:$configName -Value:$configValue -Option 'AllScope'
+}
+
+Write-Verbose "Checking game configuration validity..."
+if($GameBindings.Count -le 0) { throw [System.ArgumentException] "No game bindings were defined! Cannot start any games." }
+
 if($NoWaitForConnection -eq $True) {
     Write-Information "Skipping internet connection check due to -NoWaitForConnection being set."
 }
@@ -113,10 +183,7 @@ else {
     Write-Information "Internet connected on connection '$firstConnection'."
 }
 
-$gameList = @(
-    @{'Name'='Game 1'; 'Path'='notepad'; 'Arguments'=@(); 'KeyName'='d'; 'LocalizedInputName'='P1 Menu Left'}
-    @{'Name'='Game 2'; 'Path'='powershell'; 'Arguments'=@(); 'KeyName'='e'; 'LocalizedInputName'='P1 Start'}
-) | ForEach-Object { New-Object -TypeName 'PSCustomObject' -Property:$_ }
+$gameList = $GameBindings | ForEach-Object { New-Object -TypeName 'PSCustomObject' -Property:$_ }
 
 $selectedGame = $gameList[0]
 $defaultGameName = $selectedGame.Name
