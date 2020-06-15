@@ -1,7 +1,7 @@
 
 <#PSScriptInfo
 
-.VERSION 1.2.0
+.VERSION 1.2.1
 
 .GUID 8845ad34-cf4a-468a-a188-65f4dc91e7d9
 
@@ -245,4 +245,6 @@ else {
 }
 
 Write-Information "Starting '$($selectedGame.Name)'..."
-& $selectedGame.Path $selectedGame.Arguments
+$startProcessParams = @{ 'FilePath' = $selectedGame.Path }
+if($selectedGame.Arguments.Count -gt 0) { $startProcessParams['ArgumentList'] = $selectedGame.Arguments }
+Start-Process @startProcessParams
