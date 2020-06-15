@@ -1,7 +1,7 @@
 
 <#PSScriptInfo
 
-.VERSION 1.1.0
+.VERSION 1.2.0
 
 .GUID 8845ad34-cf4a-468a-a188-65f4dc91e7d9
 
@@ -58,6 +58,17 @@
 .PARAMETER NoSelectGame
  If set, game selection will be skipped, and the default game will be started immediately.
 
+.PARAMETER DelayBetweenSelectionChecksSeconds
+ Specifies the delay in seconds between each input check when selecting a game.
+ The delay can be between 0 and 10 seconds.
+ The default is 0.25 seconds.
+
+.PARAMETER MaxSelectionWaitSeconds
+ Specifies the maximum duration in seconds to wait before starting the first game in the GameBindings list.
+ The wait can be between 0 and 600 seconds.
+ 0 seconds means "wait indefinitely".
+ The default wait duration is 30 seconds.
+
 .INPUTS
  None. You cannot pipe objects to Start-ArcadeGames.ps1.
 
@@ -86,10 +97,18 @@ Param(
 
     [Parameter(ParameterSetName='Cmd')]
     [ValidateRange(1, 60)]
-    [int]$DelayBetweenConnectionChecksSeconds = 5,
+    [double]$DelayBetweenConnectionChecksSeconds = 5,
 
     [Parameter(ParameterSetName='Cmd')]
-    [switch]$NoSelectGame
+    [switch]$NoSelectGame,
+
+    [Parameter(ParameterSetName='Cmd')]
+    [ValidateRange(0, 10)]
+    [double]$DelayBetweenSelectionChecksSeconds = 0.25,
+
+    [Parameter(ParameterSetName='Cmd')]
+    [ValidateRange(0, 600)]
+    [int]$MaxSelectionWaitSeconds = 30
 )
 
 <#
@@ -195,14 +214,29 @@ elseif(Test-Path variable:global:psISE) {
     Write-Information "Starting default game '$defaultGameName' since running in PowerShell ISE."
 }
 else {
-    Write-Information 'Press any of the following inputs to select the game to start:'
+    $maxSelectWaitSeconds = $null
+    if($MaxSelectionWaitSeconds -gt 0) {
+        Write-Information "Game '$defaultGameName' will start automatically in $MaxSelectionWaitSeconds seconds."
+        Write-Information 'Press any of the following inputs to start another game:'
+        $maxSelectWaitSeconds = $MaxSelectionWaitSeconds
+    }
+    else {
+        Write-Information 'Press any of the following inputs to start a game:'
+        $maxSelectWaitSeconds = [int]::MaxValue 
+    }
     $gameList | Select-Object -Property @('Name', 'LocalizedInputName') | Format-Table @{Label='Game'; Expression={$_.Name}},@{Label='Input'; Expression={$_.LocalizedInputName}} | Out-String | ForEach-Object { Write-Information $_ }
 
     $userSelectedGame = $null
-    while($null -eq $userSelectedGame) {
-        $keyPress = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-        Write-Verbose "Key '$($keyPress.Character)' was pressed."
-        $userSelectedGame = $gameList | Where-Object { $_.KeyName -eq $keyPress.Character }
+    $selectionTimeoutTime = $(Get-Date) + $(New-TimeSpan -Seconds:$maxSelectWaitSeconds)
+    while (($null -eq $userSelectedGame) -and ($(Get-Date) -lt $selectionTimeoutTime)) {
+        if(-not $host.ui.RawUI.KeyAvailable) {
+            continue
+        }
+
+        $keyPressed = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown").Character
+        Write-Verbose "Key '$keyPressed' was pressed."
+        $userSelectedGame = $gameList | Where-Object { $_.KeyName -eq $keyPressed }
+        Start-Sleep -Seconds:$DelayBetweenSelectionChecksSeconds
     }
     if($null -ne $userSelectedGame) {
         Write-Information "Game '$($userSelectedGame.Name)' was selected."
